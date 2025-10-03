@@ -1,5 +1,6 @@
 struct stat;
 struct rtcdate;
+struct pstat; //hw3 getprocs
 
 // system calls
 int fork(void);
@@ -23,6 +24,7 @@ int getpid(void);
 char* sbrk(int);
 int sleep(int);
 int uptime(void);
+int getprocs(struct pstat*); //hw3 getprocs
 
 // ulib.c
 int stat(const char*, struct stat*);
