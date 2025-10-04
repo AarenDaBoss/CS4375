@@ -5,6 +5,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "pstat.h"
 
 struct cpu cpus[NCPU];
 
@@ -117,6 +118,7 @@ allocproc(void)
   return 0;
 
 found:
+  p->cputime = 0;
   p->pid = allocpid();
   p->state = USED;
 
@@ -426,6 +428,55 @@ wait(uint64 addr)
     sleep(p, &wait_lock);  //DOC: wait-sleep
   }
 }
+
+int
+wait2(uint64 ustatus, uint64 urusage)
+{
+  struct proc *p;
+  int havekids, pid;
+  struct proc *mp = myproc();
+  struct rusage ru;
+
+  acquire(&wait_lock);
+  for(;;){
+    havekids = 0;
+    for(p = proc; p < &proc[NPROC]; p++){
+      if(p->parent == mp){
+        havekids = 1;
+        if(p->state == ZOMBIE){
+          pid = p->pid;
+
+          // copy child's xstate to user (if user provided non-null)
+          if(ustatus != 0 &&
+             copyout(mp->pagetable, ustatus, (char *)&p->xstate, sizeof(p->xstate)) < 0){
+            release(&wait_lock);
+            return -1;
+          }
+
+          // fill and copy rusage (CPU time)
+          ru.cputime = p->cputime;
+          if(urusage != 0 &&
+             copyout(mp->pagetable, urusage, (char *)&ru, sizeof(ru)) < 0){
+            release(&wait_lock);
+            return -1;
+          }
+
+          freeproc(p);
+          release(&wait_lock);
+          return pid;
+        }
+      }
+    }
+
+    if(!havekids || mp->killed){
+      release(&wait_lock);
+      return -1;
+    }
+
+    sleep(mp, &wait_lock);
+  }
+}
+
 
 // Per-CPU process scheduler.
 // Each CPU calls scheduler() after setting itself up.

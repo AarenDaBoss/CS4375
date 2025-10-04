@@ -95,3 +95,14 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+uint64
+sys_wait2(void)
+{
+  uint64 u_status;   
+  uint64 u_rusage;   // user pointer to struct rusage
+  if (argaddr(0, &u_status) < 0 || argaddr(1, &u_rusage) < 0)
+    return -1;
+  return wait2(u_status, u_rusage);
+}
+
