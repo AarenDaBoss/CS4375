@@ -1,11 +1,15 @@
+#include "kernel/types.h"
+#include "kernel/pstat.h"
+
 struct stat;
 struct rtcdate;
-struct pstat; //hw3 getprocs
+struct rusage;
 
 // system calls
 int fork(void);
 int exit(int) __attribute__((noreturn));
 int wait(int*);
+int wait2(int*, struct rusage*);
 int pipe(int*);
 int write(int, const void*, int);
 int read(int, void*, int);
@@ -24,7 +28,7 @@ int getpid(void);
 char* sbrk(int);
 int sleep(int);
 int uptime(void);
-int getprocs(struct pstat*); //hw3 getprocs
+
 
 // ulib.c
 int stat(const char*, struct stat*);
