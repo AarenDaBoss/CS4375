@@ -26,6 +26,20 @@ extern char trampoline[]; // trampoline.S
 // memory model when using p->parent.
 // must be acquired before any p->lock.
 struct spinlock wait_lock;
+extern struct spinlock tickslock;
+
+
+extern uint ticks;   // global timer
+
+static inline void
+make_runnable(struct proc *p)
+{
+  // caller must hold p->lock
+  acquire(&tickslock);
+  p->readytime = ticks;
+  release(&tickslock);
+  p->state = RUNNABLE;
+}
 
 // Allocate a page for each process's kernel stack.
 // Map it high in memory, followed by an invalid
@@ -142,6 +156,9 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  p->priority  = 0;   // default base priority [0..49]
+  p->readytime = 0;   // will be set when made RUNNABLE
+
   return p;
 }
 
@@ -243,7 +260,7 @@ userinit(void)
   safestrcpy(p->name, "initcode", sizeof(p->name));
   p->cwd = namei("/");
 
-  p->state = RUNNABLE;
+ make_runnable(p);
 
   release(&p->lock);
 }
@@ -296,6 +313,8 @@ fork(void)
   // Cause fork to return 0 in the child.
   np->trapframe->a0 = 0;
 
+  np->priority = p->priority;
+
   // increment reference counts on open file descriptors.
   for(i = 0; i < NOFILE; i++)
     if(p->ofile[i])
@@ -313,8 +332,9 @@ fork(void)
   release(&wait_lock);
 
   acquire(&np->lock);
-  np->state = RUNNABLE;
+  make_runnable(np);  
   release(&np->lock);
+
 
   return pid;
 }
@@ -436,32 +456,53 @@ wait(uint64 addr)
 //  - eventually that process transfers control
 //    via swtch back to the scheduler.
 void
-scheduler(void)
-{
-  struct proc *p;
+scheduler(void){
   struct cpu *c = mycpu();
-  
   c->proc = 0;
+
   for(;;){
-    // Avoid deadlock by ensuring that devices can interrupt.
     intr_on();
 
-    for(p = proc; p < &proc[NPROC]; p++) {
+#if SCHED_POLICY == RR_SCHED
+    // Round-robin (stock xv6 logic with locks)
+    for(struct proc *p = proc; p < &proc[NPROC]; p++){
       acquire(&p->lock);
-      if(p->state == RUNNABLE) {
-        // Switch to chosen process.  It is the process's job
-        // to release its lock and then reacquire it
-        // before jumping back to us.
+      if(p->state == RUNNABLE){
         p->state = RUNNING;
         c->proc = p;
         swtch(&c->context, &p->context);
-
-        // Process is done running for now.
-        // It should have changed its p->state before coming back.
         c->proc = 0;
       }
       release(&p->lock);
     }
+
+#elif SCHED_POLICY == PRIO_SCHED
+    // Pick RUNNABLE process with highest *base* priority
+    struct proc *best = 0;
+    int bestprio = -1;
+
+    // Pass 1: find candidate (lock each proc to read a consistent state)
+    for(struct proc *p = proc; p < &proc[NPROC]; p++){
+      acquire(&p->lock);
+      if(p->state == RUNNABLE && p->priority > bestprio){
+        bestprio = p->priority;
+        best = p;
+      }
+      release(&p->lock);
+    }
+
+    // Pass 2: run it (re-check under lock because state may have changed)
+    if(best){
+      acquire(&best->lock);
+      if(best->state == RUNNABLE){
+        best->state = RUNNING;
+        c->proc = best;
+        swtch(&c->context, &best->context);
+        c->proc = 0;
+      }
+      release(&best->lock);
+    }
+#endif
   }
 }
 
@@ -498,7 +539,7 @@ yield(void)
 {
   struct proc *p = myproc();
   acquire(&p->lock);
-  p->state = RUNNABLE;
+  make_runnable(p);
   sched();
   release(&p->lock);
 }
@@ -566,7 +607,7 @@ wakeup(void *chan)
     if(p != myproc()){
       acquire(&p->lock);
       if(p->state == SLEEPING && p->chan == chan) {
-        p->state = RUNNABLE;
+        make_runnable(p);
       }
       release(&p->lock);
     }
@@ -587,7 +628,7 @@ kill(int pid)
       p->killed = 1;
       if(p->state == SLEEPING){
         // Wake process from sleep().
-        p->state = RUNNABLE;
+        make_runnable(p);
       }
       release(&p->lock);
       return 0;
@@ -678,6 +719,10 @@ procinfo(uint64 addr)
       procinfo.ppid = (p->parent)->pid;
     else
       procinfo.ppid = 0;
+
+    procinfo.priority  = p->priority;
+    procinfo.readytime = p->readytime;
+
     for (int i=0; i<16; i++)
       procinfo.name[i] = p->name[i];
    if (copyout(thisproc->pagetable, addr, (char *)&procinfo, sizeof(procinfo)) < 0)
@@ -686,4 +731,28 @@ procinfo(uint64 addr)
   }
   return nprocs;
 }
+
+int setpriority(int pid, int priority){
+  struct proc *p;
+  if (priority < 0 || priority > 49)
+    return -1;
+
+  for (p = proc; p < &proc[NPROC]; p++) {
+    if (p->pid == pid) {
+      p->priority = priority;
+      return 0;
+    }
+  }
+  return -1;
+}
+
+int getpriority(int pid){
+  struct proc *p;
+  for (p = proc; p < &proc[NPROC]; p++) {
+    if (p->pid == pid)
+      return p->priority;
+  }
+  return -1;
+}
+
 

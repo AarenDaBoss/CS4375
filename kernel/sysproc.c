@@ -8,6 +8,24 @@
 #include "proc.h"
 
 uint64
+sys_getpriority(void)
+{
+  struct proc *p = myproc();
+  return p->priority;
+}
+
+uint64
+sys_setpriority(void)
+{
+  int pr;
+  if (argint(0, &pr) < 0) return -1;
+  if (pr < 0 || pr > 49)  return -1;  // enforce [0..49]
+  struct proc *p = myproc();
+  p->priority = pr;
+  return 0;
+}
+
+uint64
 sys_exit(void)
 {
   int n;
@@ -96,15 +114,13 @@ sys_uptime(void)
   return xticks;
 }
 
-// return the number of active processes in the system
-// fill in user-provided data structure with pid,state,sz,ppid,name
 uint64
 sys_getprocs(void)
 {
-  uint64 addr;  // user pointer to struct pstat
-
+  uint64 addr;
   if (argaddr(0, &addr) < 0)
     return -1;
-  return(procinfo(addr));
+  return procinfo(addr);
 }
+
 
