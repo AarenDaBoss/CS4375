@@ -35,9 +35,9 @@ static inline void
 make_runnable(struct proc *p)
 {
   // caller must hold p->lock
-  acquire(&tickslock);
+  //acquire(&tickslock);
   p->readytime = ticks;
-  release(&tickslock);
+ // release(&tickslock);
   p->state = RUNNABLE;
 }
 
@@ -475,26 +475,46 @@ scheduler(void){
       }
       release(&p->lock);
     }
-
 #elif SCHED_POLICY == PRIO_SCHED
-    // Pick RUNNABLE process with highest *base* priority
+    // Pick RUNNABLE with highest effective priority.
+    // effective = base + age/QUANTUM (capped). Tie-break: larger age.
     struct proc *best = 0;
-    int bestprio = -1;
+    int   best_eff  = -1;
+    uint  best_age  = 0;
 
-    // Pass 1: find candidate (lock each proc to read a consistent state)
-    for(struct proc *p = proc; p < &proc[NPROC]; p++){
+    for (struct proc *p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
-      if(p->state == RUNNABLE && p->priority > bestprio){
-        bestprio = p->priority;
-        best = p;
+      if (p->state == RUNNABLE) {
+        int  base = p->priority;
+        uint age  = (ticks >= p->readytime) ? (ticks - p->readytime) : 0;
+
+        int eff = base;
+#if AGING_ENABLED
+        eff += age / AGE_QUANTUM_TICKS;
+        if (eff > MAX_PRIORITY) eff = MAX_PRIORITY;
+#endif
+
+        int better = 0;
+        if (eff > best_eff) {
+          better = 1;
+        } else if (eff == best_eff && best && age > best_age) {
+          better = 1;
+        }
+
+        if (better) {
+          best_eff = eff;
+          best_age = age;
+          if (best) release(&best->lock); // drop previous winner's lock
+          best = p;                        // keep lock of current winner
+          continue;                        // don't release best's lock
+        }
       }
       release(&p->lock);
     }
 
-    // Pass 2: run it (re-check under lock because state may have changed)
-    if(best){
-      acquire(&best->lock);
-      if(best->state == RUNNABLE){
+    if (best) {
+      // best->lock is still held
+      if (best->state == RUNNABLE) {
         best->state = RUNNING;
         c->proc = best;
         swtch(&c->context, &best->context);

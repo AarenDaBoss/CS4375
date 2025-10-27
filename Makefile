@@ -135,12 +135,17 @@ UPROGS=\
 	$U/_zombie\
 	$U/_uptime\
 	$U/_ps\
+	$U/_matmul\
+	$U/_pexec\
+	$U/_ptime\
 	$U/_task1\
-	$U/_matmul
+	$U/_task2\
+	$U/_task3\
+	$U/_task4
 
+UPROGS_SRC := $(patsubst $U/_%, $U/%.c, $(UPROGS))
 
-
-fs.img: mkfs/mkfs README $(UPROGS)
+fs.img: mkfs/mkfs README $(UPROGS) $(UPROGS_SRC) Makefile
 	mkfs/mkfs fs.img README $(UPROGS)
 
 -include kernel/*.d user/*.d
