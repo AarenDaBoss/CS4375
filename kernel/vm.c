@@ -173,9 +173,20 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 
   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
     if((pte = walk(pagetable, a, 0)) == 0)
-      panic("uvmunmap: walk");
+    {
+      //panic("uvmunmap: walk");
+      // Before: panic("uvmunmap: walk"); because PTE may not exist for all pages in lazy allocation.
+      //after: skip silently.
+      continue;
+    }
     if((*pte & PTE_V) == 0)
-      panic("uvmunmap: not mapped");
+    {
+      //panic("uvmunmap: not mapped");
+      // Before: panic("uvmunmap: not mapped");
+      // After: skip silently.
+      continue;
+    }
+      
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
     if(do_free){
@@ -307,9 +318,20 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
-      panic("uvmcopy: pte should exist");
+    {
+      //panic("uvmcopy: pte should exist");
+      // Before: panic("uvmcopy: pte should exist"); when do copy i.e, fork, all pages should have a PTE entry in eager allcoation. But in lazy allocation, some pages may not be mapped yet.
+      // After: skip silently.
+      continue;
+    }
+      
     if((*pte & PTE_V) == 0)
-      panic("uvmcopy: page not present");
+    {
+      //panic("uvmcopy: page not present");
+      // Before: panic("uvmcopy: page not present"); when do copy i.e, fork, all pages should be mapped in eager allcoation. But in lazy allocation, some pages may not be mapped yet.
+      // After: skip silently.
+      continue;
+    }
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
     if((mem = kalloc()) == 0)

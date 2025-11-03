@@ -11,8 +11,8 @@ int main(int argc, char *argv[])
     uint start = atoi(argv[1]);
     uint limit = atoi(argv[2]);
     uint increment = atoi(argv[3]);
-    uint i;
-    // uint j;
+    uint i, j;
+
     int *array;
     for (i = start; i <= limit; i += increment)
     {
@@ -24,8 +24,35 @@ int main(int argc, char *argv[])
             printf("malloc failed\n");
             exit(-1);
         }
-        /*for (uint j = 0; j <= i*1024*1024/4; j++)
-                array[j] = j;*/
+        // ----------------------------------------------------------
+        // CASE 1: Default (lazy) — allocate and free without touching
+        // ----------------------------------------------------------
+        // This verifies that no physical pages are allocated
+        // until the memory is actually accessed.
+
+        // ----------------------------------------------------------
+        // CASE 2: Touch every page (uncomment to test)
+        // ----------------------------------------------------------
+        
+        /*uint bytes = i * 1024 * 1024;
+        for (j = 0; j < bytes / sizeof(int); j += 1024) {
+            // write once roughly every 4 KB (one int per page)
+            array[j] = j;
+        }
+        printf("Touched all pages in %d MiB\n", i);*/
+        
+
+        // ----------------------------------------------------------
+        // CASE 3: Touch some pages only (uncomment to test)
+        // ----------------------------------------------------------
+        
+        /*uint bytes = i * 1024 * 1024;
+        for (j = 0; j < bytes / sizeof(int); j += 1024 * 16) {
+            // touch 1 out of every 16 pages (~6 % of total)
+            array[j] = j;
+        }
+        printf("Touched ~1/16 of pages in %d MiB\n", i);*/
+        
                 
         sleep(50);
         printf("freeing %p mebibytes\n", i);
