@@ -24,9 +24,9 @@ int main(int argc, char *argv[])
             printf("malloc failed\n");
             exit(-1);
         }
-        /*	for (j = 0; j <= i*1024*1024/4; j++)
-                array[j] = j;
-                */
+        /*for (uint j = 0; j <= i*1024*1024/4; j++)
+                array[j] = j;*/
+                
         sleep(50);
         printf("freeing %p mebibytes\n", i);
         free(array);

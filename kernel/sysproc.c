@@ -43,12 +43,23 @@ sys_sbrk(void)
 {
   int addr;
   int n;
+  struct proc *p = myproc();
 
   if(argint(0, &n) < 0)
     return -1;
-  addr = myproc()->sz;
-  if(growproc(n) < 0)
-    return -1;
+
+  addr = p->sz;
+  if (n == 0)
+    return addr;
+
+  uint64 new_sz = addr + n;
+  if(new_sz < p->sz){
+    return (uint64)-1;
+  }
+  p->sz = new_sz;
+  /*old eager allocatoin, we don't call growproc right away for lazy allocatoin*/
+  /*if(growproc(n) < 0)
+    return -1;*/
   return addr;
 }
 
