@@ -74,7 +74,7 @@ usertrap(void)
   // -------------------- Lazy Allocation Handler -------------------- begin ----
   else if (scause == 0xd || scause == 0xf) 
   {
-    uint64 va = PGROUNDDOWN(stval);
+    uint64 roundedFaultyVa = PGROUNDDOWN(stval);
 
     if (stval < p->sz)
     {
@@ -86,7 +86,7 @@ usertrap(void)
         p->killed = 1;
       } else {
         memset(mem, 0, PGSIZE);
-        if (mappages(p->pagetable, va, PGSIZE, (uint64)mem, PTE_R | PTE_W | PTE_X | PTE_U) != 0)
+        if (mappages(p->pagetable, roundedFaultyVa, PGSIZE, (uint64)mem, PTE_R | PTE_W | PTE_X | PTE_U) != 0)
         {
           printf("lazy allocation: mappages failed for pid=%d\n", p->pid);
           kfree(mem);
