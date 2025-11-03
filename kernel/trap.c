@@ -49,8 +49,11 @@ usertrap(void)
   
   // save user program counter.
   p->trapframe->epc = r_sepc();
-  
-  if(r_scause() == 8){
+
+  uint64 scause = r_scause(); // get exception cause
+  uint64 stval  = r_stval(); // get faulting virtual address
+
+  if(scause == 8){
     // system call
 
     if(p->killed)
@@ -67,7 +70,37 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
-  } else {
+  } 
+  // -------------------- Lazy Allocation Handler -------------------- begin ----
+  else if (scause == 0xd || scause == 0xf) 
+  {
+    uint64 va = PGROUNDDOWN(stval);
+
+    if (stval < p->sz)
+    {
+      char *mem = kalloc();
+      if (mem == 0)
+      {
+        // Out of physical memory
+        printf("lazy alloction: kalloc failed for pid=%d\n", p->pid);
+        p->killed = 1;
+      } else {
+        memset(mem, 0, PGSIZE);
+        if (mappages(p->pagetable, va, PGSIZE, (uint64)mem, PTE_R | PTE_W | PTE_X | PTE_U) != 0)
+        {
+          printf("lazy allocation: mappages failed for pid=%d\n", p->pid);
+          kfree(mem);
+          p->killed = 1;
+        }
+      }
+    } else {
+      // Address outside allocated virtual memory — invalid access
+      printf("usertrap(): invalid access at va=%p (pid=%d, sz=%p)\n", stval, p->pid, p->sz);
+      p->killed = 1;
+    }
+  }
+  // -------------------- Lazy Allocation Handler -------------------- end ----
+  else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
     p->killed = 1;
