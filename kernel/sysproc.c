@@ -95,3 +95,10 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+uint64
+sys_freepmem(void)
+{
+  uint64 pages = kfreepages_count();
+  return pages * PGSIZE;
+}
