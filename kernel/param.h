@@ -14,4 +14,7 @@
 #define RR_SCHED 0
 #define PRIO_SCHED 1
 #define SCHED_POLICY PRIO_SCHED  // or RR_SCHED for round robin
+#define MAX_PRIORITY        49     
+#define AGING_ENABLED        1     
+#define AGE_QUANTUM_TICKS   10  
 

@@ -141,7 +141,10 @@ UPROGS=\
 	$U/_task1\
 	$U/_task2\
 	$U/_task3\
-	$U/_task4
+	$U/_task4\
+	$U/_free
+
+
 
 UPROGS_SRC := $(patsubst $U/_%, $U/%.c, $(UPROGS))
 

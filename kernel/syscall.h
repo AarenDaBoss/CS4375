@@ -22,4 +22,5 @@
 #define SYS_link   21
 #define SYS_mkdir  22
 #define SYS_close  23
-#define SYS_getprocs 24 //hw3 getprocs
+#define SYS_getprocs 24 
+#define SYS_freepmem  25

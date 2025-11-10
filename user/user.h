@@ -27,6 +27,7 @@ int uptime(void);
 int getprocs(struct pstat *);
 int getpriority(void);
 int setpriority(int);
+uint64 freepmem(void); //hw4
 
 
 

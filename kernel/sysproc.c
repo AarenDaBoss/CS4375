@@ -123,4 +123,12 @@ sys_getprocs(void)
   return procinfo(addr);
 }
 
+extern uint64 freepmem(void);
+
+uint64
+sys_freepmem(void)
+{
+    return freepmem();
+}
+
 
