@@ -6,6 +6,7 @@
 #include "proc.h"
 #include "defs.h"
 
+
 struct spinlock tickslock;
 uint ticks;
 
@@ -41,34 +42,53 @@ usertrap(void)
   if((r_sstatus() & SSTATUS_SPP) != 0)
     panic("usertrap: not from user mode");
 
-  // send interrupts and exceptions to kerneltrap(),
-  // since we're now in the kernel.
   w_stvec((uint64)kernelvec);
 
   struct proc *p = myproc();
-  
-  // save user program counter.
-  p->trapframe->epc = r_sepc();
-  
-  if(r_scause() == 8){
-    // system call
 
+  // save user pc
+  p->trapframe->epc = r_sepc();
+
+  uint64 scause = r_scause();
+
+  if(scause == 8){
+    // system call
     if(p->killed)
       exit(-1);
 
-    // sepc points to the ecall instruction,
-    // but we want to return to the next instruction.
     p->trapframe->epc += 4;
-
-    // an interrupt will change sstatus &c registers,
-    // so don't enable until done with those registers.
     intr_on();
-
     syscall();
+
   } else if((which_dev = devintr()) != 0){
-    // ok
+    // device interrupt, ok
+
+  } else if (scause == 13 || scause == 15) {
+    // 13 = load page fault, 15 = store page fault
+    uint64 va = r_stval();
+    if (va < p->sz) {
+      uint64 va_pg = PGROUNDDOWN(va);
+      char *mem = kalloc();
+      if (mem == 0) {
+        printf("lazy alloc: out of memory\n");
+        p->killed = 1;
+      } else {
+        memset(mem, 0, PGSIZE);
+        if (mappages(p->pagetable, va_pg, PGSIZE, (uint64)mem,
+                     PTE_R | PTE_W | PTE_X | PTE_U) != 0) {
+          kfree(mem);
+          p->killed = 1;
+        }
+      }
+      // IMPORTANT: we do NOT return here — we fall through to the tail
+    } else {
+      // fault outside valid VA — kill it
+      printf("usertrap: page fault va=%p outside sz=%p\n", va, p->sz);
+      p->killed = 1;
+    }
+
   } else {
-    printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
+    printf("usertrap(): unexpected scause %p pid=%d\n", scause, p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
     p->killed = 1;
   }
@@ -76,7 +96,6 @@ usertrap(void)
   if(p->killed)
     exit(-1);
 
-  // give up the CPU if this is a timer interrupt.
   if(which_dev == 2)
     yield();
 

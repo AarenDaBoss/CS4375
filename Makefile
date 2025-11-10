@@ -142,7 +142,10 @@ UPROGS=\
 	$U/_task2\
 	$U/_task3\
 	$U/_task4\
-	$U/_free
+	$U/_free\
+	$U/_memory-user
+
+
 
 
 

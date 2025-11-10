@@ -167,21 +167,28 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 {
   uint64 a;
   pte_t *pte;
-
-  if((va % PGSIZE) != 0)
-    panic("uvmunmap: not aligned");
+  uint64 pa;
 
   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
-    if((pte = walk(pagetable, a, 0)) == 0)
-      panic("uvmunmap: walk");
-    if((*pte & PTE_V) == 0)
-      panic("uvmunmap: not mapped");
+    // try to find the PTE
+    pte = walk(pagetable, a, 0);
+    if(pte == 0){
+      // with lazy allocation we can have gaps; just skip them
+      continue;
+    }
+
+    // if the PTE exists but the page was never mapped, also skip
+    if((*pte & PTE_V) == 0){
+      continue;
+    }
+
+    // normal xv6 checks
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
-    if(do_free){
-      uint64 pa = PTE2PA(*pte);
+
+    pa = PTE2PA(*pte);
+    if(do_free)
       kfree((void*)pa);
-    }
     *pte = 0;
   }
 }
@@ -300,21 +307,29 @@ uvmfree(pagetable_t pagetable, uint64 sz)
 int
 uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 {
+  uint64 i, pa;
   pte_t *pte;
-  uint64 pa, i;
   uint flags;
   char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
-    if((pte = walk(old, i, 0)) == 0)
-      panic("uvmcopy: pte should exist");
-    if((*pte & PTE_V) == 0)
-      panic("uvmcopy: page not present");
+    pte = walk(old, i, 0);
+    if(pte == 0){
+      // parent has no mapping here (lazy) → skip
+      continue;
+    }
+    if((*pte & PTE_V) == 0){
+      // PTE exists but not mapped → skip
+      continue;
+    }
+
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
+
     if((mem = kalloc()) == 0)
       goto err;
     memmove(mem, (char*)pa, PGSIZE);
+
     if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
       kfree(mem);
       goto err;
@@ -322,8 +337,8 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   }
   return 0;
 
- err:
-  uvmunmap(new, 0, i / PGSIZE, 1);
+err:
+  uvmfree(new, sz);
   return -1;
 }
 
