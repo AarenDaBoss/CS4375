@@ -105,6 +105,12 @@ void            yield(void);
 int             either_copyout(int user_dst, uint64 dst, void *src, uint64 len);
 int             either_copyin(void *dst, int user_src, uint64 src, uint64 len);
 void            procdump(void);
+//HOMEWORK 5, mmap and munmap
+struct mmr_list* get_mmr_list(int);
+int alloc_mmr_listid(void);
+void dealloc_mmr_listid(int);
+void            mmrlistinit(void);
+// end of HOMEWORK 5, mmap and munmap
 
 // swtch.S
 void            swtch(struct context*, struct context*);

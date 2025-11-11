@@ -26,6 +26,11 @@ extern char trampoline[]; // trampoline.S
 // must be acquired before any p->lock.
 struct spinlock wait_lock;
 
+// Homework 5: array of locks for mmr_list entries
+struct mmr_list mmr_list[NPROC*MAX_MMR];
+struct spinlock listid_lock;
+// END Homework 5: array of locks for mmr_list entries
+
 // Allocate a page for each process's kernel stack.
 // Map it high in memory, followed by an invalid
 // guard page.
