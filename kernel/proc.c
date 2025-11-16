@@ -5,6 +5,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "stat.h"
 
 struct cpu cpus[NCPU];
 
@@ -158,6 +159,44 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
+    // --- BEGIN: mmap region cleanup ---
+  for (int i = 0; i < MAX_MMR; i++) {
+    int dofree = 0;
+
+    if (p->mmr[i].valid == 1) {
+      if (p->mmr[i].flags & MAP_PRIVATE) {
+        // private mmap: free the physical pages when unmapping
+        dofree = 1;
+      } else { // MAP_SHARED
+        // check if this is the last process sharing the region
+        struct mmr_list *lst = &mmr_list[p->mmr[i].mmr_family.listid];
+        acquire(&lst->lock);
+        if (p->mmr[i].mmr_family.next == &p->mmr[i].mmr_family) {
+          // no one else in the family: free frames and listid
+          dofree = 1;
+          release(&lst->lock);
+          dealloc_mmr_listid(p->mmr[i].mmr_family.listid);
+        } else {
+          // remove this proc from the family circular list
+          p->mmr[i].mmr_family.next->prev = p->mmr[i].mmr_family.prev;
+          p->mmr[i].mmr_family.prev->next = p->mmr[i].mmr_family.next;
+          release(&lst->lock);
+        }
+      }
+
+      // unmap all pages in this region for this process;
+      // free physical frames only if dofree == 1
+      for (uint64 addr = p->mmr[i].addr;
+           addr < p->mmr[i].addr + p->mmr[i].length;
+           addr += PGSIZE) {
+        if (walkaddr(p->pagetable, addr))
+          uvmunmap(p->pagetable, addr, 1, dofree);
+      }
+
+      p->mmr[i].valid = 0;  // mark region invalid for this process
+    }
+  }
+  // --- END: mmap region cleanup ---
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
