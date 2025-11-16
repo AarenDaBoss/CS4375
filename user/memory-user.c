@@ -11,7 +11,7 @@ int main(int argc, char *argv[])
     uint start = atoi(argv[1]);
     uint limit = atoi(argv[2]);
     uint increment = atoi(argv[3]);
-    uint i, j;
+    uint i;
 
     int *array;
     for (i = start; i <= limit; i += increment)

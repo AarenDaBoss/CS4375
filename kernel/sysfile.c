@@ -484,3 +484,150 @@ sys_pipe(void)
   }
   return 0;
 }
+
+//HW5 mmap and munmap
+
+uint64
+sys_mmap(void)
+{
+  uint64 length;
+  int    prot;
+  int    flags;
+  struct proc *p = myproc();
+  struct mmr *newmmr = 0;
+  uint64 start_addr;
+
+  // args: (void *addr, uint length, int prot, int flags, int fd, int offset)
+  uint64 addr;
+  int fd, offset;
+
+  if (argaddr(0, &addr) < 0)
+    return -1;
+  if (argaddr(1, &length) < 0)
+    return -1;
+  if (argint(2, &prot) < 0)
+    return -1;
+  if (argint(3, &flags) < 0)
+    return -1;
+  if (argint(4, &fd) < 0)
+    return -1;
+  if (argint(5, &offset) < 0)
+    return -1;
+
+  // Basic error checking (only anonymous mappings in HW5)
+  if (length == 0)
+    return -1;
+  if ((flags & MAP_ANONYMOUS) == 0)
+    return -1;
+  if ((flags & (MAP_PRIVATE | MAP_SHARED)) == 0)
+    return -1;
+
+  // find free mmr entry
+  for (int i = 0; i < MAX_MMR; i++) {
+    if (p->mmr[i].valid == 0) {
+      newmmr = &p->mmr[i];
+      break;
+    }
+  }
+  if (!newmmr)
+    return -1;
+
+  // page-round length and place region below cur_max
+  uint64 size = PGROUNDUP(length);
+  start_addr = p->cur_max - size;        // <<< THIS IS THE “your code” line
+  if (start_addr == 0 || start_addr >= p->cur_max) // <<< THIS IS THE “your code” line
+    return -1;
+
+  newmmr->valid  = 1;
+  newmmr->addr   = start_addr;
+  newmmr->length = size;
+  newmmr->prot   = prot;
+  newmmr->flags  = flags;
+  newmmr->file   = 0;
+  newmmr->fd     = -1;
+
+  newmmr->mmr_family.proc = p;
+  newmmr->mmr_family.next = &newmmr->mmr_family;
+  newmmr->mmr_family.prev = &newmmr->mmr_family;
+
+  // allocate page-table entries (no physical pages yet)
+  if (mapvpages(p->pagetable, newmmr->addr, newmmr->length) < 0) {
+    newmmr->valid = 0;
+    return -1;
+  }
+
+  if (flags & MAP_SHARED)
+    newmmr->mmr_family.listid = alloc_mmr_listid();
+  else
+    newmmr->mmr_family.listid = -1;
+
+  p->cur_max = start_addr;
+
+  return start_addr;
+}
+
+int
+munmap(uint64 addr, uint64 length)
+{
+  struct proc *p = myproc();
+  struct mmr *mmr = 0;
+  int dofree = 0;
+  int i;
+
+  // find matching mmr entry
+  for (i = 0; i < MAX_MMR; i++)
+    if (p->mmr[i].valid == 1 &&
+        addr == p->mmr[i].addr &&
+        PGROUNDUP(length) == p->mmr[i].length) {
+      mmr = &p->mmr[i];
+      break;
+    }
+  if (!mmr)
+    return -1;
+
+  mmr->valid = 0;
+
+  if (mmr->flags & MAP_PRIVATE)
+    dofree = 1;
+  else { // MAP_SHARED
+    struct mmr_list *pmmrlist = get_mmr_list(mmr->mmr_family.listid);
+    acquire(&pmmrlist->lock);
+    if (mmr->mmr_family.next == &mmr->mmr_family) {
+      // last user
+      dofree = 1;
+      release(&pmmrlist->lock);
+      dealloc_mmr_listid(mmr->mmr_family.listid);
+    } else {
+      // remove this proc from family list
+      mmr->mmr_family.next->prev = mmr->mmr_family.prev;
+      mmr->mmr_family.prev->next = mmr->mmr_family.next;
+      release(&pmmrlist->lock);
+    }
+  }
+
+  // unmap each page, optionally freeing physical memory
+  for (uint64 pageaddr = addr;
+       pageaddr < p->mmr[i].addr + p->mmr[i].length;
+       pageaddr += PGSIZE) {
+    if (walkaddr(p->pagetable, pageaddr))
+      uvmunmap(p->pagetable, pageaddr, 1, dofree);
+  }
+  return 0;
+}
+
+
+uint64
+sys_munmap(void)
+{
+  uint64 addr;
+  uint64 length;
+
+  if (argaddr(0, &addr) < 0)
+    return -1;
+  if (argaddr(1, &length) < 0)
+    return -1;
+
+  return munmap(addr, length);
+}
+
+// end of HW5 mmap and munmap
