@@ -327,7 +327,7 @@ fork(void)
   }
 
   // Copy user memory from parent to child.
-  if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
+  if(uvmcopy(p->pagetable, np->pagetable, 0, p->sz) < 0){
     freeproc(np);
     release(&np->lock);
     return -1;
@@ -350,6 +350,70 @@ fork(void)
 
   pid = np->pid;
   np->cur_max = p->cur_max;
+
+    // ----- BEGIN: copy mmr table from parent to child -----
+
+  // Copy parent's mmr[] array to child
+  memmove(np->mmr, p->mmr, sizeof(p->mmr));
+
+  // For each mapped region, handle PRIVATE vs SHARED
+  for (int i = 0; i < MAX_MMR; i++) {
+    if (!p->mmr[i].valid)
+      continue;
+
+    // PRIVATE region: allocate new pages and copy contents
+    if (p->mmr[i].flags & MAP_PRIVATE) {
+      for (uint64 addr = p->mmr[i].addr;
+           addr < p->mmr[i].addr + p->mmr[i].length;
+           addr += PGSIZE) {
+        if (walkaddr(p->pagetable, addr)) {
+          if (uvmcopy(p->pagetable, np->pagetable, addr, addr + PGSIZE) < 0) {
+            freeproc(np);
+            release(&np->lock);
+            return -1;
+          }
+        }
+      }
+
+      // Initialize child's mmr_family for PRIVATE
+      np->mmr[i].mmr_family.proc   = np;
+      np->mmr[i].mmr_family.listid = -1;
+      np->mmr[i].mmr_family.next   = &np->mmr[i].mmr_family;
+      np->mmr[i].mmr_family.prev   = &np->mmr[i].mmr_family;
+
+    } else {
+      // SHARED region: share the same physical frames
+      for (uint64 addr = p->mmr[i].addr;
+           addr < p->mmr[i].addr + p->mmr[i].length;
+           addr += PGSIZE) {
+        if (walkaddr(p->pagetable, addr)) {
+          if (uvmcopyshared(p->pagetable, np->pagetable, addr, addr + PGSIZE) < 0) {
+            freeproc(np);
+            release(&np->lock);
+            return -1;
+          }
+        }
+      }
+
+      // Hook child into the shared mmr family list
+      np->mmr[i].mmr_family.proc   = np;
+      np->mmr[i].mmr_family.listid = p->mmr[i].mmr_family.listid;
+
+      struct mmr_list *lst = &mmr_list[np->mmr[i].mmr_family.listid];
+      acquire(&lst->lock);
+
+      // Insert child right after parent in the circular doubly-linked list
+      np->mmr[i].mmr_family.next = p->mmr[i].mmr_family.next;
+      np->mmr[i].mmr_family.prev = &p->mmr[i].mmr_family;
+      p->mmr[i].mmr_family.next->prev = &np->mmr[i].mmr_family;
+      p->mmr[i].mmr_family.next       = &np->mmr[i].mmr_family;
+
+      release(&lst->lock);
+    }
+  }
+
+  // ----- END: copy mmr table from parent to child -----
+
 
   release(&np->lock);
 
