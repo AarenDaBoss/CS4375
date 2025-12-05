@@ -113,3 +113,124 @@ sys_freepmem(void)
   uint64 pages = kfreepages_count();
   return pages * PGSIZE;
 }
+
+uint64
+sys_sem_init(void)
+{
+  sem_t *uaddr;
+  int shared;
+  int value;
+
+  // Arguments: (sem_t *sem, int shared, int value)
+  if(argaddr(0, (uint64 *)&uaddr) < 0)
+    return -1;
+  if(argint(1, &shared) < 0)
+    return -1;
+  if(argint(2, &value) < 0)
+    return -1;
+
+  int index = semalloc();
+  if(index < 0)
+    return -1;
+
+  // Initialize the semaphore in kernel
+  struct semaphore *s = &semtable.sem[index];
+
+  acquire(&s->lock);
+  s->count = value;
+  release(&s->lock);
+
+  // Copy index back to user memory
+  if(copyout(myproc()->pagetable, (uint64)uaddr, (char*)&index, sizeof(int)) < 0){
+    semdealloc(index);
+    return -1;
+  }
+
+  return 0;
+}
+
+
+uint64
+sys_sem_destroy(void)
+{
+  sem_t index;
+  sem_t *uaddr;
+
+  if(argaddr(0, (uint64 *)&uaddr) < 0)
+    return -1;
+
+  if(copyin(myproc()->pagetable, (char *)&index, (uint64)uaddr, sizeof(int)) < 0)
+    return -1;
+
+  if(index < 0 || index >= NSEM)
+    return -1;
+
+  semdealloc(index);
+
+  return 0;
+}
+
+
+uint64
+sys_sem_wait(void)
+{
+  sem_t index;
+  sem_t *uaddr;
+
+  if(argaddr(0, (uint64 *)&uaddr) < 0)
+    return -1;
+
+  // Copy semaphore index from user into kernel
+  if(copyin(myproc()->pagetable, (char *)&index, (uint64)uaddr, sizeof(int)) < 0)
+    return -1;
+
+  if(index < 0 || index >= NSEM)
+    return -1;
+
+  struct semaphore *s = &semtable.sem[index];
+
+  acquire(&s->lock);
+
+  // BLOCK while count == 0
+  while(s->count == 0){
+    sleep(s, &s->lock);   // releases lock, reacquires when woken
+  }
+
+  // When awoken: decrement
+  s->count--;
+
+  release(&s->lock);
+
+  return 0;
+}
+
+
+uint64
+sys_sem_post(void)
+{
+  sem_t index;
+  sem_t *uaddr;
+
+  if(argaddr(0, (uint64 *)&uaddr) < 0)
+    return -1;
+
+  if(copyin(myproc()->pagetable, (char *)&index, (uint64)uaddr, sizeof(int)) < 0)
+    return -1;
+
+  if(index < 0 || index >= NSEM)
+    return -1;
+
+  struct semaphore *s = &semtable.sem[index];
+
+  acquire(&s->lock);
+
+  s->count++;
+
+  // Wake up any waiting processes
+  wakeup(s);
+
+  release(&s->lock);
+
+  return 0;
+}
+

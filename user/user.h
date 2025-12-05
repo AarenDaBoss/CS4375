@@ -23,7 +23,12 @@ int getpid(void);
 char* sbrk(int);
 int sleep(int);
 int uptime(void);
+int sem_init(sem_t *sem, int shared, int value);
+int sem_destroy(sem_t *sem);
+int sem_wait(sem_t *sem);
+int sem_post(sem_t *sem);
 uint64 freepmem (void);
+
 
 // ulib.c
 int stat(const char*, struct stat*);
